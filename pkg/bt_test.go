@@ -409,24 +409,24 @@ func TestStringNestedContinuationPrefix(t *testing.T) {
 }
 
 func TestStringFullTree(t *testing.T) {
-	visible := bt.NewLeaf("visible", func(*bt.Blackboard[noState]) (bt.State, error) { return bt.Success, nil })
-	inRange := bt.NewLeaf("in_range", func(*bt.Blackboard[noState]) (bt.State, error) { return bt.Success, nil })
-	fire := bt.NewLeaf("fire", func(*bt.Blackboard[noState]) (bt.State, error) { return bt.Success, nil })
-	flee := bt.NewLeaf("flee", func(*bt.Blackboard[noState]) (bt.State, error) { return bt.Failure, nil })
-	precond := bt.NewParallel("preconditions", 2, visible, inRange)
-	attack := bt.NewSequence("attack", precond, fire)
-	notFlee := bt.NewInverter("not_fleeing", flee)
-	root := bt.NewSelector("root", attack, notFlee)
+	replicasReady := bt.NewLeaf("replicas_ready", func(*bt.Blackboard[noState]) (bt.State, error) { return bt.Success, nil })
+	notDegraded := bt.NewLeaf("not_degraded", func(*bt.Blackboard[noState]) (bt.State, error) { return bt.Success, nil })
+	rollout := bt.NewLeaf("rollout", func(*bt.Blackboard[noState]) (bt.State, error) { return bt.Success, nil })
+	rollback := bt.NewLeaf("rollback", func(*bt.Blackboard[noState]) (bt.State, error) { return bt.Failure, nil })
+	precond := bt.NewParallel("preconditions", 2, replicasReady, notDegraded)
+	deploy := bt.NewSequence("deploy", precond, rollout)
+	noRollback := bt.NewInverter("no_rollback", rollback)
+	root := bt.NewSelector("root", deploy, noRollback)
 
 	expected := strings.Join([]string{
 		"root [Selector]",
-		"├── attack [Sequence]",
+		"├── deploy [Sequence]",
 		"│   ├── preconditions [Parallel]",
-		"│   │   ├── visible [Node]",
-		"│   │   └── in_range [Node]",
-		"│   └── fire [Node]",
-		"└── not_fleeing [Inverter]",
-		"    └── flee [Node]",
+		"│   │   ├── replicas_ready [Node]",
+		"│   │   └── not_degraded [Node]",
+		"│   └── rollout [Node]",
+		"└── no_rollback [Inverter]",
+		"    └── rollback [Node]",
 	}, "\n")
 
 	if got := root.String(); got != expected {
@@ -458,59 +458,59 @@ func TestStringAllNodeTypesAsRoot(t *testing.T) {
 
 func TestIntegrationGuardedPatrol(t *testing.T) {
 	bb := &bt.Blackboard[noState]{}
-	hasEnergy := stateLeaf(bt.Success)
-	patrol := stateLeaf(bt.Success)
-	guarded := bt.NewSequence("guarded_patrol", hasEnergy, patrol)
+	replicasReady := stateLeaf(bt.Success)
+	rollout := stateLeaf(bt.Success)
+	guarded := bt.NewSequence("guarded_deploy", replicasReady, rollout)
 	got, err := guarded.Process(bb)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got != bt.Success {
-		t.Errorf("guarded patrol (energy ok): got %v, want Success", got)
+		t.Errorf("guarded deploy (replicas ready): got %v, want Success", got)
 	}
 
-	lowEnergy := stateLeaf(bt.Failure)
-	skipped := bt.NewSequence("skipped_patrol", lowEnergy, patrol)
+	notReady := stateLeaf(bt.Failure)
+	skipped := bt.NewSequence("skipped_deploy", notReady, rollout)
 	got, err = skipped.Process(bb)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got != bt.Failure {
-		t.Errorf("guarded patrol (low energy): got %v, want Failure", got)
+		t.Errorf("guarded deploy (replicas not ready): got %v, want Failure", got)
 	}
 }
 
 func TestIntegrationAttackFleeFallback(t *testing.T) {
 	bb := &bt.Blackboard[noState]{}
-	attackFails := stateLeaf(bt.Failure)
-	fleeSucceeds := stateLeaf(bt.Success)
-	chain := bt.NewSelector("combat", attackFails, fleeSucceeds)
+	deployFails := stateLeaf(bt.Failure)
+	rollbackSucceeds := stateLeaf(bt.Success)
+	chain := bt.NewSelector("reconcile", deployFails, rollbackSucceeds)
 	got, err := chain.Process(bb)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got != bt.Success {
-		t.Errorf("attack/flee fallback: got %v, want Success", got)
+		t.Errorf("deploy/rollback fallback: got %v, want Success", got)
 	}
 
-	// When attack succeeds, flee must NOT be ticked.
-	attackCalls, fleeCalls := 0, 0
-	attackOK := countingLeaf(&attackCalls, bt.Success)
-	fleeSpy := countingLeaf(&fleeCalls, bt.Success)
-	bt.NewSelector("combat2", attackOK, fleeSpy).Process(bb)
-	if attackCalls != 1 {
-		t.Errorf("attack: want 1 call, got %d", attackCalls)
+	// When deploy succeeds, rollback must NOT be ticked.
+	deployCalls, rollbackCalls := 0, 0
+	deployOK := countingLeaf(&deployCalls, bt.Success)
+	rollbackSpy := countingLeaf(&rollbackCalls, bt.Success)
+	bt.NewSelector("reconcile2", deployOK, rollbackSpy).Process(bb)
+	if deployCalls != 1 {
+		t.Errorf("deploy: want 1 call, got %d", deployCalls)
 	}
-	if fleeCalls != 0 {
-		t.Errorf("flee must not be called when attack succeeds, got %d calls", fleeCalls)
+	if rollbackCalls != 0 {
+		t.Errorf("rollback must not be called when deploy succeeds, got %d calls", rollbackCalls)
 	}
 }
 
 func TestIntegrationParallelPreconditions(t *testing.T) {
 	bb := &bt.Blackboard[noState]{}
-	visible := stateLeaf(bt.Success)
-	inRange := stateLeaf(bt.Success)
-	precond := bt.NewParallel("preconditions", 2, visible, inRange)
+	replicasReady := stateLeaf(bt.Success)
+	notDegraded := stateLeaf(bt.Success)
+	precond := bt.NewParallel("preconditions", 2, replicasReady, notDegraded)
 	got, err := precond.Process(bb)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -519,8 +519,8 @@ func TestIntegrationParallelPreconditions(t *testing.T) {
 		t.Errorf("both preconditions met: got %v, want Success", got)
 	}
 
-	outOfRange := stateLeaf(bt.Failure)
-	precondFail := bt.NewParallel("preconditions_fail", 2, visible, outOfRange)
+	degraded := stateLeaf(bt.Failure)
+	precondFail := bt.NewParallel("preconditions_fail", 2, replicasReady, degraded)
 	got, err = precondFail.Process(bb)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -530,46 +530,46 @@ func TestIntegrationParallelPreconditions(t *testing.T) {
 	}
 }
 
-// gameState is the typed blackboard data for the complex integration tests.
-type gameState struct {
-	Visible     bool
-	InRange     bool
-	Fired       bool
-	FleeBlocked bool
+// k8sState is the typed blackboard data for the complex integration tests.
+type k8sState struct {
+	ReplicasReady    bool
+	NotDegraded      bool
+	RolloutTriggered bool
+	RollbackBlocked  bool
 }
 
-func makeComplexTree() bt.Node[gameState] {
-	visible := bt.NewLeaf("visible", func(bb *bt.Blackboard[gameState]) (bt.State, error) {
-		if bb.Data.Visible {
+func makeComplexTree() bt.Node[k8sState] {
+	replicasReady := bt.NewLeaf("replicas_ready", func(bb *bt.Blackboard[k8sState]) (bt.State, error) {
+		if bb.Data.ReplicasReady {
 			return bt.Success, nil
 		}
 		return bt.Failure, nil
 	})
-	inRange := bt.NewLeaf("in_range", func(bb *bt.Blackboard[gameState]) (bt.State, error) {
-		if bb.Data.InRange {
+	notDegraded := bt.NewLeaf("not_degraded", func(bb *bt.Blackboard[k8sState]) (bt.State, error) {
+		if bb.Data.NotDegraded {
 			return bt.Success, nil
 		}
 		return bt.Failure, nil
 	})
-	fire := bt.NewLeaf("fire", func(bb *bt.Blackboard[gameState]) (bt.State, error) {
-		bb.Data.Fired = true
+	rollout := bt.NewLeaf("rollout", func(bb *bt.Blackboard[k8sState]) (bt.State, error) {
+		bb.Data.RolloutTriggered = true
 		return bt.Success, nil
 	})
-	flee := bt.NewLeaf("flee", func(bb *bt.Blackboard[gameState]) (bt.State, error) {
-		if bb.Data.FleeBlocked {
+	rollback := bt.NewLeaf("rollback", func(bb *bt.Blackboard[k8sState]) (bt.State, error) {
+		if bb.Data.RollbackBlocked {
 			return bt.Success, nil
 		}
 		return bt.Failure, nil
 	})
-	precond := bt.NewParallel("preconditions", 2, visible, inRange)
-	attack := bt.NewSequence("attack", precond, fire)
-	notFlee := bt.NewInverter("not_fleeing", flee)
-	return bt.NewSelector("root", attack, notFlee)
+	precond := bt.NewParallel("preconditions", 2, replicasReady, notDegraded)
+	deploy := bt.NewSequence("deploy", precond, rollout)
+	noRollback := bt.NewInverter("no_rollback", rollback)
+	return bt.NewSelector("root", deploy, noRollback)
 }
 
 func TestIntegrationComplexTreeScenario1(t *testing.T) {
 	root := makeComplexTree()
-	bb := &bt.Blackboard[gameState]{Data: gameState{Visible: true, InRange: true}}
+	bb := &bt.Blackboard[k8sState]{Data: k8sState{ReplicasReady: true, NotDegraded: true}}
 	got, err := root.Process(bb)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -577,15 +577,15 @@ func TestIntegrationComplexTreeScenario1(t *testing.T) {
 	if got != bt.Success {
 		t.Errorf("scenario1: got %v, want Success", got)
 	}
-	if !bb.Data.Fired {
-		t.Error("scenario1: bb.Data.Fired should be true")
+	if !bb.Data.RolloutTriggered {
+		t.Error("scenario1: bb.Data.RolloutTriggered should be true")
 	}
 }
 
 func TestIntegrationComplexTreeScenario2(t *testing.T) {
 	root := makeComplexTree()
-	bb := &bt.Blackboard[gameState]{Data: gameState{Visible: false, InRange: true}}
-	// preconditions fail → flee fallback (flee fails → inverter succeeds)
+	bb := &bt.Blackboard[k8sState]{Data: k8sState{ReplicasReady: false, NotDegraded: true}}
+	// preconditions fail → rollback fallback (rollback fails → inverter succeeds)
 	got, err := root.Process(bb)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -593,7 +593,7 @@ func TestIntegrationComplexTreeScenario2(t *testing.T) {
 	if got != bt.Success {
 		t.Errorf("scenario2: got %v, want Success", got)
 	}
-	if bb.Data.Fired {
-		t.Error("scenario2: fire should not have been called")
+	if bb.Data.RolloutTriggered {
+		t.Error("scenario2: rollout should not have been triggered")
 	}
 }
