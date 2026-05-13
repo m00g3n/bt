@@ -34,7 +34,7 @@ jobs:
           go test -v -race ./pkg/... | tee bt-unit-tests.txt
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: bt-unit-tests
           path: bt-unit-tests.txt
