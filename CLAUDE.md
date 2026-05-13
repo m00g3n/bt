@@ -26,12 +26,16 @@ This is a specialized Behavior Tree library (`github.com/m00g3n/bt`). All code l
 
 **Node types:**
 - `NewLeaf(name, fn)` — terminal node executing a `func(*Blackboard[T]) (State, error)`
-- `NewSequence(children...)` — AND logic; short-circuits on first `Failure`
-- `NewSelector(children...)` — OR logic; short-circuits on first `Success`
-- `NewParallel(threshold, children...)` — ticks all children; returns `Success` if ≥ threshold succeed
-- `NewInverter(child)` — decorator swapping `Success` ↔ `Failure`
+- `NewSequence(name, children...)` — AND logic; short-circuits on first `Failure` or error
+- `NewSelector(name, children...)` — OR logic; short-circuits on first `Success` or error
+- `NewParallel(name, threshold, children...)` — ticks all children (no short-circuit); returns `Success` if ≥ threshold succeed
+- `NewInverter(name, child)` — decorator swapping `Success` ↔ `Failure`
 
-**Error propagation:** errors bubble up but do not short-circuit composite nodes (Parallel captures only the first error).
+**Error propagation:** Sequence and Selector short-circuit on the first error. Parallel always ticks all children and captures only the first error.
 
 **Tree visualization:** call `.String()` on any node to get an ASCII tree using box-drawing characters.
+
+## Plans
+
+Implementation plans live in `docs/plans/`. Use this directory when creating or reading plan files.
 
