@@ -1,0 +1,49 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - LICENSE
+      - .gitignore
+      - "**.md"
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths-ignore:
+      - LICENSE
+      - .gitignore
+      - "**.md"
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Run tests
+        run: |
+          go mod tidy
+          set -o pipefail
+          go test -v -race ./pkg/... | tee bt-unit-tests.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: bt-unit-tests
+          path: bt-unit-tests.txt
+
+      - name: Generate test summary
+        run: |
+          {
+            echo "# bt unit tests output:"
+            printf '\n```\n'
+            cat bt-unit-tests.txt
+            printf '\n```\n'
+          } >> $GITHUB_STEP_SUMMARY
