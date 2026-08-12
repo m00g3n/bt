@@ -1,6 +1,6 @@
 package bt
 
-import "errors"
+import "fmt"
 
 type leafNode[T any] struct {
 	name string
@@ -15,9 +15,13 @@ func NewLeaf[T any](name string, fn func(*Blackboard[T]) (State, error)) Node[T]
 
 func (n *leafNode[T]) Process(bb *Blackboard[T]) (State, error) {
 	if n.fn == nil {
-		return Failure, errors.New("bt: leaf node " + n.name + ": fn is nil")
+		return Failure, fmt.Errorf("bt: leaf node %q: fn is nil", n.name)
 	}
-	return n.fn(bb)
+	s, err := n.fn(bb)
+	if err != nil {
+		return s, fmt.Errorf("bt: leaf node %q: %w", n.name, err)
+	}
+	return s, nil
 }
 
 func (n *leafNode[T]) String() string           { return n.name + " [Node]" }
